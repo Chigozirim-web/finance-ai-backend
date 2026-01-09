@@ -1,0 +1,1 @@
+An AI-powered personal finance backend built with TypeScript, Fastify, Prisma, and OpenAI that receives transaction data, automatically categorizes spending using LLMs, and provides natural-language financial insights via API endpoints.
