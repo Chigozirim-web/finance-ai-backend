@@ -12,3 +12,13 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model Transaction {
+  id        String   @id @default(uuid())
+  amount    Float
+  merchant  String
+  category  String
+  date      DateTime
+  createdAt DateTime @default(now())
+  userId    Int
+}

@@ -1,3 +1,4 @@
+import { prisma } from '../lib/prisma';
 import Fastify from 'fastify';
 import OpenAI from "openai";
 import dotenv from "dotenv";
@@ -20,24 +21,111 @@ const fastify = Fastify({
  * - POST /ask -> Accepts user questions and provides AI-generated answers about personal finance
  */
 
-// Get Users Transactions
-fastify.get('/transactions', async (request, reply) => {
-  // Placeholder for fetching transactions logic
-  return { transactions: [] };
+const possibleCategories = ["Groceries", "Utilities", "Rent", "Shopping", "Beauty", "Entertainment", "Dining", "Travel", "Health", "Other"];
+
+/* Post transaction data to DB and AI categorises it */
+fastify.post("/transactions", async (request, reply) => {
+  const { amount, merchant, date } = request.body as {
+    amount: number;
+    merchant: string;
+    date: string;
+  };
+
+  // Ask AI to categorize
+  const aiResponse = await client.chat.completions.create({
+    model:  "gpt-5-nano", //"gpt-4o-mini"
+    messages: [
+      {
+        role: "system",
+        content: "You are a finance categorization assistant."
+      },
+      {
+        role: "user",
+        content: `Categorize this transaction: ${merchant}, €${amount}, based on the following categories: ${possibleCategories.join(", ")}. 
+        Respond with only the category name that best fits the transaction.`
+      }
+    ]
+  });
+
+  if (!aiResponse) {
+    throw new Error("Failed to categorize transaction");
+  }
+  const category = aiResponse.choices[0]?.message.content || "Other";
+
+  const tx = await prisma.transaction.create({
+    data: {
+      amount,
+      merchant,
+      category,
+      date: new Date(date),
+      userId: 1 // Placeholder user ID
+    }
+  });
+
+  console.log("Created transaction:", tx);
+
+  return tx;
 });
 
-//Post AI-generated Suggestions
-fastify.post('/transactions', async (request, reply) => {
-    const { prompt } = request.body as { prompt: string };
+/* Ask AI Questions about your finances/transactions */
+fastify.post("/ask", async (request) => {
+  const { question } = request.body as { question: string };
 
-    const aiResponse = await client.chat.completions.create({
-        model: "gpt-5-nano",
-        messages: [
-            { role: "system", content: "You are a helpful financial assistant." },
-            { role: "user", content: prompt }
-        ]
-    });
-    return { suggestion: aiResponse.choices[0].message?.content ?? "No response generated" };
+  const transactions = await prisma.transaction.findMany();
+
+  const aiResponse = await client.chat.completions.create({
+    model: "gpt-5-nano",
+    messages: [
+      {
+        role: "system",
+        content: "You are a financial analyst. Use the provided data to answer."
+      },
+      {
+        role: "user",
+        content: `
+          Here are my transactions:
+          ${JSON.stringify(transactions)}
+
+          Question: ${question}
+        `
+      }
+    ]
+  });
+
+  return { answer: aiResponse.choices[0]?.message.content || "I cannot accurately answer your question with the transaction data I have" };
+});
+
+
+/* Get Users Transactions */ 
+fastify.get('/transactions', async (request, reply) => {
+  const transactions = await prisma.transaction.findMany({ where: { userId: 1 } }); // Placeholder user ID
+  return { transactions };
+});
+
+/* Get AI Insights on Spending */
+fastify.get('/insights', async (request, reply) => {
+  const transactions = await prisma.transaction.findMany({ where: { userId: 1 } }); // Placeholder user ID
+
+  const aiResponse = await client.chat.completions.create({
+    model: "gpt-5-nano",
+    messages: [
+      {
+        role: "system",
+        content: "You are a financial insights generator."
+      },
+      {
+        role: "user",
+        content: `
+          Here are my transactions:
+          ${JSON.stringify(transactions)}
+
+          Provide insights on my spending habits.
+        `
+      }
+    ]
+  });
+
+  return { insights: aiResponse.choices[0]?.message.content || "No insights available" };
 });
 
 // Start server
